@@ -1,61 +1,28 @@
-# Manufacturing OEE System
+# 🛠️ 产线OEE分析与瓶颈识别系统 - 开发看板
 
-A system for tracking Overall Equipment Effectiveness (OEE) in manufacturing environments.
+## 🏁 阶段一：数据接入与字段标准化（第 1 - 4 小时）
+- [ ] 1.1 编写 Python 脚本，直接通过 URL 在线拉取 UCI 开源工业数据集（10,000条日志）
+- [ ] 1.2 开展初步数据清洗，将英文字段重命名为规范的、符合 IE 语义的变量（如 is_failure, rotational_speed 等）
+- [ ] 1.3 打印数据结构（shape, info），确保数据无缝加载
 
-## Overview
+## 📈 阶段二：OEE 三维指标数学建模（第 5 - 12 小时）
+- [ ] 2.1 编写 Availability 计算逻辑：基于 Machine failure 与 Tool wear（刀具/工装磨损）计算停机损失与可用率
+- [ ] 2.2 编写 Performance 计算逻辑：设定标准理论转速（1500 rpm），利用实际转速与扭矩计算速度损失与性能效率
+- [ ] 2.3 编写 Quality 计算逻辑：将数据集中的五种具体缺陷类型（TWF, HDF, PWF, OSF, RNF）定义为不良品，计算综合良率
+- [ ] 2.4 按产品型号（H/M/L 三种生产线）进行分组统计，输出第一份结构化的 OEE 数据报表
 
-This system helps monitor and analyze manufacturing equipment performance by tracking:
+## 🔍 阶段三：瓶颈诊断与 IE 智能改善建议（第 13 - 24 小时）
+- [ ] 3.1 编写低效工序自动标红定位模块（识别哪条线的哪个指标是核心瓶颈）
+- [ ] 3.2 统计停机与质量损失的根本原因，计算五大失效模式的发生频次与 Pareto（排列图）占比
+- [ ] 3.3 内置 IE 改善方法论（如 SMED 快速换型、温控工艺优化），根据数据分析结果自动触发并输出针对性的现场优化策略提示
 
-- **Availability** - Uptime vs. planned production time
-- **Performance** - Actual throughput vs. maximum possible throughput
-- **Quality** - Good products vs. total products produced
+## 🖥️ 阶段四：Streamlit 数字化看板全栈开发（第 25 - 40 小时）
+- [ ] 4.1 搭建 Streamlit 多页面架构（Sidebar 导航栏）
+- [ ] 4.2 开发【生产运营总览】页面：使用 st.metric 动态展示核心指标，绘制产线 OEE 对比柱状图
+- [ ] 4.3 开发【瓶颈工序诊断】页面：绘制损失根因饼图/排列图，动态渲染系统生成的 IE 改善建议
+- [ ] 4.4 开发【实时工艺参数模拟器】页面：提供滑动条供用户调节温度、转速、扭矩，实现分钟级的质量缺陷风险预警展示
 
-## Features
-
-- Real-time OEE calculation and monitoring
-- Equipment downtime tracking
-- Production data collection and analysis
-- Performance dashboards and reporting
-- Alert system for OEE threshold violations
-
-## Getting Started
-
-### Prerequisites
-
-- Python 3.8+
-- pip
-
-### Installation
-
-```bash
-pip install -r requirements.txt
-```
-
-### Usage
-
-```bash
-python main.py
-```
-
-## Project Structure
-
-```
-manufacturing-oee-system/
-├── README.md
-├── requirements.txt
-├── main.py
-├── src/
-│   ├── __init__.py
-│   ├── oee_calculator.py
-│   ├── data_collector.py
-│   ├── equipment_monitor.py
-│   └── reporting.py
-├── tests/
-│   └── ...
-└── config/
-    └── ...
-```
-
-## License
-
-MIT
+## 🚀 阶段五：GitHub 包装与简历收尾（第 41 - 48 小时）
+- [ ] 5.1 本地运行系统，截取 3-4 张高质量的数字化看板运行截图
+- [ ] 5.2 重构 README.md，将项目背景、技术栈（Pandas, Streamlit）、核心功能和截图完美排版
+- [ ] 5.3 规范执行 Git Commit 并推送到远程仓库，将项目无缝更新到个人简历中
