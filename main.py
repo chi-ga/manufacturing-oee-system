@@ -7,8 +7,7 @@
 import os
 import pandas as pd
 
-DATA_URL = "https://archive.ics.uci.edu/ml/machine-learning-databases/00601/ai4i2020.csv"
-LOCAL_CACHE = os.path.join(os.path.dirname(__file__), "ai4i2020.csv")
+DATA_FILE = os.path.join(os.path.dirname(__file__), "ai4i2020.csv")
 
 # 原始字段 -> 规范命名映射
 COLUMN_RENAME_MAP = {
@@ -29,13 +28,9 @@ COLUMN_RENAME_MAP = {
 }
 
 
-def load_data(url: str) -> pd.DataFrame:
-    """从 URL 加载数据集并重命名字段，支持本地缓存。"""
-    if os.path.exists(LOCAL_CACHE):
-        df = pd.read_csv(LOCAL_CACHE)
-    else:
-        df = pd.read_csv(url)
-        df.to_csv(LOCAL_CACHE, index=False)
+def load_data() -> pd.DataFrame:
+    """加载本地数据集并重命名字段。"""
+    df = pd.read_csv(DATA_FILE)
     df.rename(columns=COLUMN_RENAME_MAP, inplace=True)
     return df
 
@@ -80,7 +75,7 @@ def print_data_overview(df: pd.DataFrame) -> None:
     print("\n" + "=" * 60)
 
 
-# ─── 阶段二：OEE 三维指标数学建模 ───────────────────────────
+# ─── 常量定义 ───────────────────────────────────────────────
 
 PLANNED_TIME = 1440          # 单台设备单日计划生产时间（分钟）
 FAILURE_DOWNTIME = 30        # 每次故障停机时长（分钟）
@@ -88,77 +83,66 @@ TOOL_WEAR_THRESHOLD = 200    # 刀具磨损触发换刀阈值（分钟）
 TOOL_CHANGE_DOWNTIME = 45    # 每次换刀停机时长（分钟）
 STANDARD_SPEED = 1500        # 标准理论转速（rpm）
 
+FAILURE_MODE_MAP = {
+    "twf_tool_wear_failure":       ("TWF", "刀具磨损失效"),
+    "hdf_heat_dissipation_failure": ("HDF", "散热失效"),
+    "pwf_power_failure":           ("PWF", "功率失效"),
+    "osf_overstrain_failure":      ("OSF", "过载失效"),
+    "rnf_random_failure":          ("RNF", "随机失效"),
+}
 
-def calc_availability(df: pd.DataFrame) -> pd.DataFrame:
-    """计算 Availability（时间利用率）。
+IE_SUGGESTIONS = {
+    "TWF": "建议实施 SMED 快速换型策略，优化换刀节拍；引入刀具寿命在线监测系统，实现预测性换刀。",
+    "HDF": "建议引入智能冷却循环工装，优化温控工艺；增设散热风道或水冷模块，降低工艺温度波动。",
+    "PWF": "建议排查供电回路与驱动器负载，优化功率匹配；引入功率因数校正装置。",
+    "OSF": "建议优化工装夹具设计，降低过载风险；增加扭矩实时监测与过载保护联锁。",
+    "RNF": "建议加强设备点检与预防性维护频率，排查间歇性故障根因（如线缆松动、传感器漂移）。",
+}
 
-    停机损失来源：
-    1. is_failure == 1 → 每次 30 分钟故障停机
-    2. tool_wear 累计每达到 200 分钟 → 一次 45 分钟换刀停机
-    """
+DEFECT_COLS = list(FAILURE_MODE_MAP.keys())[:4]  # TWF, HDF, PWF, OSF（排除 RNF）
+
+
+def enrich_oee_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """一次性计算 OEE 相关的派生列，避免多次 copy。"""
     df = df.copy()
+    # Availability 派生列
     df["_failure_downtime"] = df["is_failure"] * FAILURE_DOWNTIME
     df["_tool_changes"] = (df["tool_wear"] // TOOL_WEAR_THRESHOLD).astype(int)
     df["_tool_downtime"] = df["_tool_changes"] * TOOL_CHANGE_DOWNTIME
-    return df
-
-
-def calc_performance(df: pd.DataFrame) -> pd.DataFrame:
-    """计算 Performance（性能效率）。
-
-    实际转速 / 标准转速（1500 rpm），截断上限为 1.0。
-    """
-    df = df.copy()
+    # Performance 派生列
     df["_performance"] = (df["rotational_speed"] / STANDARD_SPEED).clip(upper=1.0)
-    return df
-
-
-def calc_quality(df: pd.DataFrame) -> pd.DataFrame:
-    """计算 Quality（合格率）。
-
-    TWF/HDF/PWF/OSF 任意一项为 1 → 该产品为不合格品。
-    """
-    df = df.copy()
-    defect_cols = ["twf_tool_wear_failure", "hdf_heat_dissipation_failure",
-                   "pwf_power_failure", "osf_overstrain_failure"]
-    df["_is_defect"] = df[defect_cols].any(axis=1).astype(int)
+    # Quality 派生列
+    df["_is_defect"] = df[DEFECT_COLS].any(axis=1).astype(int)
     return df
 
 
 def generate_oee_report(df: pd.DataFrame) -> pd.DataFrame:
     """按产品型号分组，计算三维指标并输出结构化 OEE 报表。"""
-    df = calc_availability(df)
-    df = calc_performance(df)
-    df = calc_quality(df)
+    df = enrich_oee_columns(df)
 
     groups = []
     for ptype, gdf in df.groupby("product_type"):
         n = len(gdf)
-        failure_downtime = gdf["_failure_downtime"].sum()
-        tool_changes = gdf["_tool_changes"].sum()
-        tool_downtime = gdf["_tool_downtime"].sum()
-        total_downtime = failure_downtime + tool_downtime
+        total_downtime = gdf["_failure_downtime"].sum() + gdf["_tool_downtime"].sum()
+        defect_count = int(gdf["_is_defect"].sum())
 
         availability = (PLANNED_TIME - total_downtime / n) / PLANNED_TIME
         performance = gdf["_performance"].mean()
-        defect_count = gdf["_is_defect"].sum()
         quality = (n - defect_count) / n
-        oee = availability * performance * quality
 
         groups.append({
             "product_type": ptype,
             "n": n,
             "failure_count": int(gdf["is_failure"].sum()),
-            "tool_changes": int(tool_changes),
-            "defect_count": int(defect_count),
+            "tool_changes": int(gdf["_tool_changes"].sum()),
+            "defect_count": defect_count,
             "availability": round(availability, 4),
             "performance": round(performance, 4),
             "quality": round(quality, 4),
-            "oee": round(oee, 4),
+            "oee": round(availability * performance * quality, 4),
         })
 
-    report = pd.DataFrame(groups).sort_values("oee", ascending=False).reset_index(drop=True)
-    return report
+    return pd.DataFrame(groups).sort_values("oee", ascending=False).reset_index(drop=True)
 
 
 def print_oee_report(report: pd.DataFrame) -> None:
@@ -190,22 +174,6 @@ def print_oee_report(report: pd.DataFrame) -> None:
 
 
 # ─── 阶段三：瓶颈诊断与 IE 智能改善建议 ────────────────────
-
-FAILURE_MODE_MAP = {
-    "twf_tool_wear_failure":       ("TWF", "刀具磨损失效"),
-    "hdf_heat_dissipation_failure": ("HDF", "散热失效"),
-    "pwf_power_failure":           ("PWF", "功率失效"),
-    "osf_overstrain_failure":      ("OSF", "过载失效"),
-    "rnf_random_failure":          ("RNF", "随机失效"),
-}
-
-IE_SUGGESTIONS = {
-    "TWF": "建议实施 SMED 快速换型策略，优化换刀节拍；引入刀具寿命在线监测系统，实现预测性换刀。",
-    "HDF": "建议引入智能冷却循环工装，优化温控工艺；增设散热风道或水冷模块，降低工艺温度波动。",
-    "PWF": "建议排查供电回路与驱动器负载，优化功率匹配；引入功率因数校正装置。",
-    "OSF": "建议优化工装夹具设计，降低过载风险；增加扭矩实时监测与过载保护联锁。",
-    "RNF": "建议加强设备点检与预防性维护频率，排查间歇性故障根因（如线缆松动、传感器漂移）。",
-}
 
 
 def identify_bottleneck(report: pd.DataFrame) -> dict:
@@ -295,8 +263,7 @@ def print_diagnosis(df: pd.DataFrame, report: pd.DataFrame) -> None:
 
 
 if __name__ == "__main__":
-    print("正在从 UCI 数据库下载数据集...\n")
-    df = load_data(DATA_URL)
+    df = load_data()
     print_data_overview(df)
 
     print("\n>>> 阶段二：OEE 三维指标建模 <<<")
